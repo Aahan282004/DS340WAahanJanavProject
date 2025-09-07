@@ -40,8 +40,8 @@ def generate_news_file():
     """
     store news headings everyday of Q3 2022 in csv
     """
-    start = '2020-10-01'
-    end = '2022-09-30'
+    start = '2022-07-01'
+    end = '2022-07-01'
     mydates = pd.date_range(start, end)
     dates = []
     for i in range(len(mydates)):
