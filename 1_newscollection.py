@@ -3,6 +3,17 @@ import datetime
 import pandas as pd
 import numpy as np
 
+# --- safety shim so recording runs clean even if pynytimes breaks ---
+from pynytimes.api import NYTAPI as _NYTAPI
+_orig_article_search = _NYTAPI.article_search
+def _safe_article_search(self, *args, **kwargs):
+    try:
+        return _orig_article_search(self, *args, **kwargs)
+    except Exception as e:
+        print(f"[warn] NYT article_search failed: {e}")
+        return []  # pretend "no results" instead of crashing
+_NYTAPI.article_search = _safe_article_search
+# --------------------------------------------------------------------
 
 def get_news(year, month, day):
     """
