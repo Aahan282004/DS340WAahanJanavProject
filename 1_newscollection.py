@@ -26,6 +26,8 @@ def get_news(year, month, day):
                 ]
             }
         )
+    if not articles:
+        return []
     for i in range(len(articles)):
         list.append(articles[i]['abstract'].replace(',', ""))
     return list
