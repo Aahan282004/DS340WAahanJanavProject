@@ -8,7 +8,7 @@ def get_news(year, month, day):
     """
     get top 10 most relevent finance news headings on each day from NY times
     """
-    nyt = NYTAPI("5UI21WrJdSgZtHZpljOncwS0qMuJuOcs", parse_dates=True)
+    nyt = NYTAPI("Z0AytUv1KxiJSS6qvHbHBvxnNDV859qF", parse_dates=True)
     list = []
     articles = nyt.article_search(
             results = 10,
