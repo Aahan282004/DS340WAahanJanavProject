@@ -14,10 +14,13 @@ from typing import Dict
 import matplotlib.pyplot as plt
 import pandas as pd
 
+import compat_warnings  # noqa: F401
+
 
 RESULTS_DIR = Path("results")
 PLOT_DIR = Path("plots")
 COMPARISON_FIG = PLOT_DIR / "comparison_prediction.png"
+RESIDUAL_FIG = PLOT_DIR / "residual_distribution.png"
 
 MODELS = ("baseline_finbert", "weighted_finbert")
 
@@ -100,9 +103,46 @@ def _plot_predictions() -> None:
     print(f"Combined plot saved to: {COMPARISON_FIG}")
 
 
+def _plot_residuals() -> None:
+    baseline = _load_predictions("baseline_finbert")
+    weighted = _load_predictions("weighted_finbert")
+    baseline_residuals = baseline["actual_close"] - baseline["predicted_close"]
+    weighted_residuals = weighted["actual_close"] - weighted["predicted_close"]
+
+    plt.figure(figsize=(8, 4))
+    plt.hist(
+        baseline_residuals,
+        bins=30,
+        alpha=0.6,
+        density=True,
+        label="Baseline residuals",
+        color="tab:orange",
+    )
+    plt.hist(
+        weighted_residuals,
+        bins=30,
+        alpha=0.6,
+        density=True,
+        label="Weighted residuals",
+        color="tab:blue",
+    )
+    plt.axvline(0, color="black", linestyle="--", linewidth=1)
+    plt.xlabel("Residual (Actual - Predicted Close)")
+    plt.ylabel("Density")
+    plt.title("Residual distribution — Baseline vs Weighted")
+    plt.legend()
+    plt.tight_layout()
+
+    PLOT_DIR.mkdir(exist_ok=True)
+    plt.savefig(RESIDUAL_FIG, dpi=200)
+    plt.close()
+    print(f"Residual plot saved to: {RESIDUAL_FIG}")
+
+
 def main() -> None:
     _print_metrics_table()
     _plot_predictions()
+    _plot_residuals()
 
 
 if __name__ == "__main__":

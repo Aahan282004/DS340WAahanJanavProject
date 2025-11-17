@@ -29,6 +29,8 @@ from sklearn.preprocessing import MinMaxScaler
 from tensorflow.keras import Sequential
 from tensorflow.keras.layers import Dense, Dropout, LSTM
 
+import compat_warnings  # noqa: F401
+
 
 SEQUENCE_LENGTH = 10
 TRAIN_SPLIT = 0.8
@@ -58,6 +60,11 @@ class DatasetBundle:
 
 def _prepare_stock_data() -> pd.DataFrame:
     stock_df = pd.read_csv("stock_price.csv")
+    if "Date" not in stock_df.columns:
+        raise ValueError(
+            "stock_price.csv is missing the 'Date' column. "
+            "Run 2_stock_data_collection.py to regenerate it."
+        )
     stock_df["Date"] = _parse_date_column(stock_df["Date"]).dt.strftime("%Y-%m-%d")
     return stock_df[["Date"] + FEATURE_COLUMNS]
 

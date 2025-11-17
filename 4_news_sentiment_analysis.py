@@ -24,6 +24,8 @@ from transformers import (
     pipeline,
 )
 
+import compat_warnings  # noqa: F401
+
 
 MODEL_NAME = "ProsusAI/finbert"
 LOOKBACK_DAYS = 3
@@ -174,7 +176,29 @@ def _aggregate_with_decay(
 
     aggregated = pd.DataFrame(results)
     aggregated["Date"] = aggregated["Date"].dt.strftime("%Y-%m-%d")
-    return aggregated
+    return _add_sentiment_features(aggregated)
+
+
+def _add_sentiment_features(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Append lightweight engineered features so downstream scripts can opt-in
+    without affecting the existing FinBERT columns.
+    """
+    engineered = df.copy()
+    window = 3
+    engineered["finbert_sentiment_roll_mean_3d"] = (
+        engineered["finbert_sentiment"].rolling(window=window, min_periods=1).mean()
+    )
+    engineered["finbert_sentiment_roll_std_3d"] = (
+        engineered["finbert_sentiment"].rolling(window=window, min_periods=2).std().fillna(0.0)
+    )
+    engineered["weighted_finbert_sentiment_roll_mean_3d"] = (
+        engineered["weighted_finbert_sentiment"].rolling(window=window, min_periods=1).mean()
+    )
+    engineered["weighted_finbert_sentiment_roll_std_3d"] = (
+        engineered["weighted_finbert_sentiment"].rolling(window=window, min_periods=2).std().fillna(0.0)
+    )
+    return engineered
 
 
 def main() -> None:
@@ -186,6 +210,11 @@ def main() -> None:
     entries = _apply_reliability(entries)
 
     stock_df = pd.read_csv("stock_price.csv")
+    if "Date" not in stock_df.columns:
+        raise ValueError(
+            "stock_price.csv is missing the 'Date' column. "
+            "Re-run 2_stock_data_collection.py to refresh the file."
+        )
     stock_df["Date"] = _parse_date_column(stock_df["Date"])
     timeline = stock_df["Date"].drop_duplicates().sort_values()
 

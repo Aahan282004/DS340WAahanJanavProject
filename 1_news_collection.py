@@ -1,34 +1,62 @@
-from pynytimes import NYTAPI
 import datetime
-import pandas as pd
+import os
+from typing import List
+
 import numpy as np
+import pandas as pd
+from pynytimes import NYTAPI
+
+import compat_warnings  # noqa: F401  # keeps urllib3 LibreSSL warning quiet
 
 
-def get_news(year, month, day):
+NYT_API_KEY = os.environ.get("NYT_API_KEY", "5UI21WrJdSgZtHZpljOncwS0qMuJuOcs")
+
+
+def get_news(year: int, month: int, day: int) -> List[str]:
     """
-    get top 10 most relevent finance news headings on each day from NY times
+    Fetch the top 10 finance-related headlines for a given day from NYT.
+
+    The upstream API sporadically returns `None` (instead of a dict/list) when
+    the request is rate-limited or the response payload is empty, so we guard
+    against those cases and return an empty list instead of crashing the run.
     """
-    nyt = NYTAPI("5UI21WrJdSgZtHZpljOncwS0qMuJuOcs", parse_dates=True)
-    list = []
-    articles = nyt.article_search(
-            results = 10,
-            dates = {
+    nyt = NYTAPI(NYT_API_KEY, parse_dates=True)
+    try:
+        articles = nyt.article_search(
+            results=10,
+            dates={
                 "begin": datetime.datetime(year, month, day),
-                "end": datetime.datetime(year, month, day)
+                "end": datetime.datetime(year, month, day),
             },
-            options = {
+            options={
                 "sort": "relevance",
                 "news_desk": [
-                    "Business", "Business Day", "Entrepreneurs", "Financial", "Technology"
+                    "Business",
+                    "Business Day",
+                    "Entrepreneurs",
+                    "Financial",
+                    "Technology",
                 ],
-                "section_name" : [
-                    "Business", "Business Day", "Technology"
-                ]
-            }
+                "section_name": ["Business", "Business Day", "Technology"],
+            },
         )
-    for i in range(len(articles)):
-        list.append(articles[i]['abstract'].replace(',', ""))
-    return list
+    except (TypeError, ValueError) as exc:
+        print(
+            f"[WARN] Failed to fetch NYT articles for {year}-{month:02}-{day:02}: {exc}"
+        )
+        return []
+
+    if not articles:
+        print(f"[WARN] No NYT articles returned for {year}-{month:02}-{day:02}")
+        return []
+
+    headlines: List[str] = []
+    for article in articles:
+        abstract = article.get("abstract") or ""
+        abstract = abstract.replace(",", "").strip()
+        if abstract:
+            headlines.append(abstract)
+    return headlines
 
 df = pd.DataFrame()
 
@@ -56,7 +84,7 @@ def generate_news_file():
         for j in range(len(news_list)):
             matrix[i + 1, j + 1] = news_list[j]
     df = pd.DataFrame(matrix)
-    df.to_csv("news.csv", index = False)
+    df.to_csv("news.csv", index=False)
 
 
 generate_news_file()

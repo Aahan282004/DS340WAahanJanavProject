@@ -1,112 +1,117 @@
-import numpy as np 
-import pandas as pd 
-from sklearn.preprocessing import MinMaxScaler
-from sklearn.metrics import mean_absolute_error
-from sklearn.metrics import mean_absolute_percentage_error
+import numpy as np
+import pandas as pd
 import tensorflow as tf
+from sklearn.metrics import mean_absolute_error, mean_absolute_percentage_error
+from sklearn.preprocessing import MinMaxScaler
+
+import compat_warnings  # noqa: F401
 
 # hyperparameters
-split = (0.85);
-sequence_length = 10;
+split = 0.85
+sequence_length = 10
 epochs = 100
 learning_rate = 0.02
 
 
-
-# loading stock price data
-stock_data = pd.read_csv("stock_price.csv")
-column = ['Close']
-
-
-len_stock_data = stock_data.shape[0]
-
-
-# splitting data to train and test
-train_examples = int(len_stock_data * split)
-train = stock_data.get(column).values[:train_examples]
-test = stock_data.get(column).values[train_examples:]
-len_train = train.shape[0]
-len_test = test.shape[0]
+def _load_close_prices(path: str = "stock_price.csv") -> np.ndarray:
+    data = pd.read_csv(path)
+    if "Close" not in data.columns:
+        raise ValueError("stock_price.csv must contain a 'Close' column.")
+    close = pd.to_numeric(data["Close"], errors="coerce").dropna()
+    if close.empty:
+        raise ValueError("Unable to extract numeric close prices from stock_price.csv.")
+    return close.values.reshape(-1, 1)
 
 
-# normalizing data
+def _build_lstm_sequences(series: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    X, y = [], []
+    for i in range(len(series) - sequence_length):
+        window = series[i : i + sequence_length]
+        target = series[i + sequence_length]
+        X.append(window.reshape(-1, 1))
+        y.append(target)
+    return np.array(X), np.array(y).reshape(-1, 1)
+
+
+close_prices = _load_close_prices()
+train_examples = int(len(close_prices) * split)
+train_raw = close_prices[:train_examples]
+test_raw = close_prices[train_examples:]
+
+if len(train_raw) <= sequence_length or len(test_raw) <= sequence_length:
+    raise ValueError("Not enough rows to build train/test windows. Collect more data.")
+
 scaler = MinMaxScaler()
-train, test = scaler.fit_transform(train), scaler.fit_transform(test)
+train_scaled = scaler.fit_transform(train_raw).flatten()
+test_scaled = scaler.transform(test_raw).flatten()
+
+X_train, y_train_scaled = _build_lstm_sequences(train_scaled)
+X_test, y_test_scaled = _build_lstm_sequences(test_scaled)
+y_train = y_train_scaled
+y_test = scaler.inverse_transform(y_test_scaled)
 
 
-# splitting training data to x and y
-X_train = []
-for i in range(len_train - sequence_length):
-    X_train.append(train[i : i + sequence_length])
-X_train = np.array(X_train).astype(float)
-y_train = np.array(train[sequence_length:]).astype(float)
-
-# splitting testing data to x and y
-X_test = []
-for i in range(len_test - sequence_length):
-    X_test.append(test[i : i + sequence_length])
-X_test = np.array(X_test).astype(float)
-y_test = np.array(test[sequence_length:]).astype(float)
-
-
-#creating LSTM model
+# creating LSTM model
 def model_create():
     tf.random.set_seed(1234)
     model = tf.keras.models.Sequential(
         [
-            tf.keras.Input(shape = (X_train.shape[1], 1)),
-            tf.keras.layers.LSTM(units = 50, activation = "tanh", return_sequences = True),
+            tf.keras.Input(shape=(X_train.shape[1], 1)),
+            tf.keras.layers.LSTM(units=50, activation="tanh", return_sequences=True),
             tf.keras.layers.Dropout(0.15),
-            tf.keras.layers.LSTM(units = 30, activation = "tanh", return_sequences = True),
+            tf.keras.layers.LSTM(units=30, activation="tanh", return_sequences=True),
             tf.keras.layers.Dropout(0.05),
-            tf.keras.layers.LSTM(units = 20, activation = "tanh", return_sequences = False),
+            tf.keras.layers.LSTM(units=20, activation="tanh", return_sequences=False),
             tf.keras.layers.Dropout(0.01),
-            tf.keras.layers.Dense(units = 1, activation = "linear")
+            tf.keras.layers.Dense(units=1, activation="linear"),
         ]
     )
 
     model.compile(
-        loss = tf.keras.losses.mean_squared_error,
-        optimizer = tf.keras.optimizers.Adam(learning_rate = learning_rate)
+        loss="mse",
+        optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
     )
-
 
     model.fit(
-        X_train, y_train,
-        epochs = epochs
+        X_train,
+        y_train,
+        epochs=epochs,
+        verbose=0,
     )
     return model
-
-# inverting normaliztion
-y_test = scaler.inverse_transform(y_test)
-
 
 
 # prediction on test set
 def predict(model):
-    predictions = model.predict(X_test)
-    predictions = scaler.inverse_transform(predictions.reshape(-1,1)).reshape(-1,1)
-    return predictions
+    predictions = model.predict(X_test, verbose=0)
+    return scaler.inverse_transform(predictions.reshape(-1, 1)).reshape(-1, 1)
 
 
 # evaluation
 def evaluate(predictions):
-    mae = mean_absolute_error(predictions, y_test)
-    mape = mean_absolute_percentage_error(predictions, y_test)
+    mae = mean_absolute_error(y_test.ravel(), predictions.ravel())
+    mape = mean_absolute_percentage_error(y_test.ravel(), predictions.ravel())
     return mae, mape, (1 - mape)
 
 
 # trial runs
 def run_model(n):
     total_mae = total_mape = total_acc = 0
-    for i in range(n):
+    last_predictions = None
+    for _ in range(n):
         model = model_create()
         predictions = predict(model)
         mae, mape, acc = evaluate(predictions)
         total_mae += mae
-        total_mape += mape 
-        total_acc += acc 
-    return (total_mae / n), (total_mape / n), (total_acc / n), predictions.tolist()
+        total_mape += mape
+        total_acc += acc
+        last_predictions = predictions
+    return (
+        total_mae / n,
+        total_mape / n,
+        total_acc / n,
+        [] if last_predictions is None else last_predictions.tolist(),
+    )
 
 
 mae, mape, acc, preds = run_model(1)
